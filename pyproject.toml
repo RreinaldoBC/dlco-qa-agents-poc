@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dlco-qa-agents"
+version = "1.0.0"
+description = "Agente Databricks Genie para validación de calidad de código - Grupo Credicorp"
+authors = [
+  { name = "ReinaldoB", email = "reinaldob@credicorp.pe" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary - Grupo Credicorp" }
+
+dependencies = [
+  "databricks-sdk>=0.30.0",
+  "databricks-vectorsearch>=0.40",
+  "mlflow>=2.16.0",
+  "pyyaml>=6.0",
+  "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=4.1.0",
+  "black>=24.0.0",
+  "ruff>=0.5.0",
+  "mypy>=1.10.0",
+  "pre-commit>=3.7.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
+ignore = ["E501"]  # line-too-long ya lo maneja black
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v --tb=short --strict-markers"

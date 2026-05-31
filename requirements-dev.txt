@@ -1,0 +1,30 @@
+# Dependencias para desarrollo local (no se instalan en Databricks)
+# Instalar: pip install -r requirements-dev.txt
+
+# SDK Databricks
+databricks-sdk>=0.30.0
+databricks-vectorsearch>=0.40
+databricks-connect>=15.0.0
+
+# MLflow
+mlflow>=2.16.0
+
+# Utilidades
+pyyaml>=6.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=8.0.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# Calidad de código
+black>=24.0.0
+ruff>=0.5.0
+mypy>=1.10.0
+pre-commit>=3.7.0
+
+# Notebooks
+ipykernel>=6.29.0
+nbformat>=5.10.0

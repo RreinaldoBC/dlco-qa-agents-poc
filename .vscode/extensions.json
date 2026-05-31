@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "databricks.databricks",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    "ms-toolsai.jupyter",
+    "github.vscode-github-actions",
+    "redhat.vscode-yaml",
+    "eamodio.gitlens"
+  ]
+}

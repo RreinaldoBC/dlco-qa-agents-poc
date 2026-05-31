@@ -1,0 +1,66 @@
+# =============================================================================
+# Databricks Asset Bundle - DLCO QA Agent
+# Proyecto: Agente Databricks Genie para DataOps Corp v1.1
+# Cliente:  Grupo Credicorp
+# Autor:    ReinaldoB
+# =============================================================================
+#
+# Comandos útiles:
+#   databricks bundle validate
+#   databricks bundle deploy --target dev
+#   databricks bundle deploy --target dev --watch
+#   databricks bundle run dlco_qa_validation_job --target dev
+# =============================================================================
+
+bundle:
+  name: dlco_qa_agents_poc
+
+variables:
+  catalog_name:
+    description: "Nombre del catálogo Unity Catalog"
+    default: "dlco_qa_agents"
+  notification_email:
+    description: "Email para notificaciones de jobs"
+    default: "reinaldob@credicorp.pe"
+  agent_version:
+    description: "Versión del agente DLCO QA"
+    default: "v1.0"
+
+include:
+  - resources/*.yml
+
+workspace:
+  host: https://adb-319103249978237.17.azuredatabricks.net
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+
+  staging:
+    mode: production
+    workspace:
+      root_path: /Workspace/Shared/dlco_qa_agents/staging
+
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Shared/dlco_qa_agents/prod
+
+sync:
+  include:
+    - notebooks/**/*.py
+    - notebooks/**/*.ipynb
+    - src/**/*.py
+  exclude:
+    - .git/**
+    - .venv/**
+    - venv/**
+    - __pycache__/**
+    - "*.pyc"
+    - .databricks/**
+    - .vscode/**
+    - tests/**
+    - docs/**

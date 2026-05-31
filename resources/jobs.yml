@@ -1,0 +1,87 @@
+# =============================================================================
+# resources/jobs.yml
+# Define los jobs de Databricks que ejecuta el agente DLCO QA
+# =============================================================================
+
+resources:
+  jobs:
+    # -------------------------------------------------------------------------
+    # JOB 1: Setup completo del entorno (one-time / re-runnable)
+    # -------------------------------------------------------------------------
+    dlco_qa_setup_job:
+      name: "[DLCO QA] Setup Completo - ${bundle.target}"
+      description: "Ejecuta la cadena 01->02->03->04 para preparar el entorno"
+
+      tasks:
+        - task_key: setup_uc_catalog
+          notebook_task:
+            notebook_path: ../notebooks/setup/01_setup_uc_catalog.py
+
+        - task_key: register_uc_tools
+          depends_on:
+            - task_key: setup_uc_catalog
+          notebook_task:
+            notebook_path: ../notebooks/setup/02_register_uc_tools.py
+
+        - task_key: prepare_golden_dataset
+          depends_on:
+            - task_key: register_uc_tools
+          notebook_task:
+            notebook_path: ../notebooks/setup/03_prepare_golden_dataset.py
+
+        - task_key: setup_vector_search
+          depends_on:
+            - task_key: prepare_golden_dataset
+          notebook_task:
+            notebook_path: ../notebooks/setup/04_setup_vector_search.py
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      tags:
+        project: "dlco_qa_agents"
+        owner: "ReinaldoB"
+        type: "setup"
+
+    # -------------------------------------------------------------------------
+    # JOB 2: Validación de PRs (invocado desde GitHub Actions)
+    # -------------------------------------------------------------------------
+    dlco_qa_validation_job:
+      name: "[DLCO QA] Validación de PR - ${bundle.target}"
+      description: "Job que valida código PySpark de un PR usando el agente"
+
+      tasks:
+        - task_key: validate_pr_code
+          notebook_task:
+            notebook_path: ../notebooks/ci/run_validation.py
+            base_parameters:
+              pr_id: "{{job.parameters.pr_id}}"
+              pr_url: "{{job.parameters.pr_url}}"
+              repo_name: "{{job.parameters.repo_name}}"
+              branch_name: "{{job.parameters.branch_name}}"
+              files_to_validate: "{{job.parameters.files_to_validate}}"
+
+      parameters:
+        - name: pr_id
+          default: ""
+        - name: pr_url
+          default: ""
+        - name: repo_name
+          default: ""
+        - name: branch_name
+          default: ""
+        - name: files_to_validate
+          default: "[]"
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      tags:
+        project: "dlco_qa_agents"
+        owner: "ReinaldoB"
+        type: "validation"
+
+      max_concurrent_runs: 5
+      timeout_seconds: 1800  # 30 min

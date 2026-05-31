@@ -1,0 +1,17 @@
+# Archivos que NO se sincronizan con Databricks
+.git/
+.github/
+.vscode/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+docs/
+tests/
+*.md
+.gitignore
+.databricksignore
+pyproject.toml
+requirements-dev.txt

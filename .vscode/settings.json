@@ -1,0 +1,36 @@
+{
+  "databricks.python.envFile": "${workspaceFolder}/.env",
+  "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "./src"
+  ],
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.databricks": true,
+    "**/*.pyc": true
+  },
+  "files.associations": {
+    "*.py": "python",
+    "databricks.yml": "yaml"
+  },
+  "editor.formatOnSave": true,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.tabSize": 4
+  },
+  "[yaml]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "databricks.bundle.enabled": true,
+  "databricks.experiments.optInto": [
+    "views.cluster",
+    "views.jobs"
+  ]
+}
