@@ -30,7 +30,7 @@ include:
   - resources/*.yml
 
 workspace:
-  host: https://adb-319103249978237.17.azuredatabricks.net
+  host: ${DATABRICKS_HOST}
 
 targets:
   dev:

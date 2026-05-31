@@ -425,7 +425,7 @@ print(f"""
 📚 Recursos para verificar el Vector Search:
 
 1. Vector Search UI:
-   https://adb-319103249978237.17.azuredatabricks.net/#setting/clusters/vector-search
+   https://<your-workspace>.azuredatabricks.net/#setting/clusters/vector-search
 
 2. Endpoint Details:
    Compute → Vector Search → {endpoint_name}

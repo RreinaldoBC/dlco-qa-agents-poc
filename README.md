@@ -75,7 +75,7 @@ Sistema de agentes inteligentes que valida automáticamente código PySpark, SQL
 - Python 3.10+
 - VSCode con extensión Databricks
 - Databricks CLI v0.205+
-- Acceso al workspace `adb-319103249978237.17.azuredatabricks.net`
+- Acceso al workspace `<your-workspace>.azuredatabricks.net`
 
 ### Setup local
 
@@ -91,7 +91,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 
 # 3. Autenticación Databricks
-databricks auth login --host https://adb-319103249978237.17.azuredatabricks.net
+databricks auth login --host https://<your-workspace>.azuredatabricks.net
 
 # 4. Validar el bundle
 databricks bundle validate
