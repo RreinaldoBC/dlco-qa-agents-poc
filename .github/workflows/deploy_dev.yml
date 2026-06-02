@@ -1,0 +1,65 @@
+# =============================================================================
+# WORKFLOW: Deploy manual a DEV
+# =============================================================================
+# Trigger: Botón "Run workflow" desde la UI de Actions
+# Acción:  Despliega el Asset Bundle al target "dev" del workspace
+# =============================================================================
+
+name: DLCO QA - Deploy DEV
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Razón del deploy (para auditoría)'
+        required: false
+        type: string
+        default: 'Manual deploy a dev'
+
+permissions:
+  contents: read
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+  DATABRICKS_BUNDLE_ENV: dev
+
+jobs:
+  deploy:
+    name: 🚀 Deploy bundle a DEV
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v4
+
+      - name: 📦 Install Databricks CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          databricks --version
+
+      - name: 🔍 Validar bundle
+        run: databricks bundle validate --target dev
+
+      - name: 🚀 Deploy bundle a dev
+        run: databricks bundle deploy --target dev
+
+      - name: 📋 Resumen del deploy
+        run: |
+          {
+            echo "## ✅ Deploy a DEV exitoso"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|-------|-------|"
+            echo "| **Target** | dev |"
+            echo "| **Trigger** | ${{ github.event_name }} |"
+            echo "| **Run by** | @${{ github.actor }} |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo "| **Razón** | ${{ inputs.reason }} |"
+            echo ""
+            echo "### 🔗 Recursos desplegados"
+            echo "- Notebooks en \`/Workspace/.../.bundle/dlco_qa_agents_poc/dev/\`"
+            echo "- Job: \`[DLCO QA] Setup Completo - dev\`"
+            echo "- Job: \`[DLCO QA] Validación de PR - dev\`"
+          } >> $GITHUB_STEP_SUMMARY

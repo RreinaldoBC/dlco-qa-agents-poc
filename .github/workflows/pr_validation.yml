@@ -1,0 +1,230 @@
+# =============================================================================
+# WORKFLOW: PR Validation con DLCO QA Agent
+# =============================================================================
+# Trigger: Cualquier PR contra la rama main
+# Acción:  Invoca el agente PySpark Validator sobre los archivos modificados
+#          y comenta los findings en el PR. Si hay 1+ finding CRITICAL,
+#          falla el check y bloquea el merge.
+# =============================================================================
+
+name: DLCO QA - PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'notebooks/**/*.py'
+      - 'src/**/*.py'
+      - 'tests/**/*.py'
+
+# Cancela ejecuciones obsoletas si se actualiza el PR
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+jobs:
+  validate:
+    name: 🤖 Validar código con DLCO QA Agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout del código del PR
+      # -----------------------------------------------------------------------
+      - name: 📥 Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Necesario para git diff con la rama base
+
+      # -----------------------------------------------------------------------
+      # 2. Setup Python
+      # -----------------------------------------------------------------------
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # -----------------------------------------------------------------------
+      # 3. Instalar Databricks CLI y dependencias
+      # -----------------------------------------------------------------------
+      - name: 📦 Install Databricks CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          databricks --version
+
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install databricks-sdk requests pyyaml
+
+      # -----------------------------------------------------------------------
+      # 4. Detectar archivos .py modificados en el PR
+      # -----------------------------------------------------------------------
+      - name: 🔍 Detectar archivos modificados
+        id: changed-files
+        run: |
+          # Comparar con la rama base del PR
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          # Listar archivos .py modificados (excluyendo eliminados)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BASE_SHA" "$HEAD_SHA" \
+            | grep -E '\.py$' \
+            | grep -vE '^(tests/|\.github/)' \
+            || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "ℹ️ No hay archivos .py modificados que requieran validación"
+            echo "files_to_validate=" >> $GITHUB_OUTPUT
+            echo "skip_validation=true" >> $GITHUB_OUTPUT
+          else
+            echo "📝 Archivos detectados:"
+            echo "$CHANGED_FILES"
+            # Guardar como output (separado por comas)
+            FILES_CSV=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//')
+            echo "files_to_validate=$FILES_CSV" >> $GITHUB_OUTPUT
+            echo "skip_validation=false" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # 5. Invocar agente Databricks (si hay archivos que validar)
+      # -----------------------------------------------------------------------
+      - name: 🤖 Ejecutar agente DLCO QA en Databricks
+        id: run-agent
+        if: steps.changed-files.outputs.skip_validation != 'true'
+        run: |
+          python src/dlco_qa/ci_validator.py \
+            --pr-id "${{ github.event.pull_request.number }}" \
+            --pr-url "${{ github.event.pull_request.html_url }}" \
+            --repo "${{ github.repository }}" \
+            --branch "${{ github.event.pull_request.head.ref }}" \
+            --files "${{ steps.changed-files.outputs.files_to_validate }}" \
+            --output-file validation_result.json
+
+      # -----------------------------------------------------------------------
+      # 6. Comentar resultados en el PR
+      # -----------------------------------------------------------------------
+      - name: 💬 Comentar findings en el PR
+        if: steps.changed-files.outputs.skip_validation != 'true' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let comment = '';
+            try {
+              const result = JSON.parse(fs.readFileSync('validation_result.json', 'utf8'));
+
+              const verdict = result.verdict || 'unknown';
+              const score = result.quality_score || 0;
+              const findings = result.findings || [];
+              const critical = findings.filter(f => f.severity === 'CRITICAL').length;
+              const high = findings.filter(f => f.severity === 'HIGH').length;
+              const medium = findings.filter(f => f.severity === 'MEDIUM').length;
+              const low = findings.filter(f => f.severity === 'LOW').length;
+
+              const verdictIcon = verdict === 'approved' ? '✅' : '❌';
+              const scoreBar = '█'.repeat(Math.floor(score/10)) + '░'.repeat(10 - Math.floor(score/10));
+
+              comment = `## ${verdictIcon} DLCO QA Agent - Reporte de Validación
+
+              | Métrica | Valor |
+              |---------|-------|
+              | **Veredicto** | ${verdict.toUpperCase()} |
+              | **Quality Score** | \`${scoreBar}\` ${score}/100 |
+              | **Total Findings** | ${findings.length} |
+              | 🔴 Critical | ${critical} |
+              | 🟠 High | ${high} |
+              | 🟡 Medium | ${medium} |
+              | 🟢 Low | ${low} |
+
+              ### 📋 Findings Detallados
+              `;
+
+              if (findings.length === 0) {
+                comment += `\n🎉 **No se encontraron problemas. ¡Excelente código!**\n`;
+              } else {
+                findings.slice(0, 20).forEach((f, i) => {
+                  const icon = f.severity === 'CRITICAL' ? '🔴' :
+                               f.severity === 'HIGH' ? '🟠' :
+                               f.severity === 'MEDIUM' ? '🟡' : '🟢';
+                  comment += `\n${i+1}. ${icon} **[${f.severity}]** \`${f.rule}\`\n   ${f.message}\n`;
+                });
+                if (findings.length > 20) {
+                  comment += `\n_... y ${findings.length - 20} findings más. Ver detalles completos en Databricks._\n`;
+                }
+              }
+
+              comment += `\n---\n_🤖 Generado por DLCO QA Agent v1.0 | Framework: DataOps Corp v1.1_`;
+            } catch (err) {
+              comment = `## ⚠️ DLCO QA Agent - Error\n\nNo se pudo procesar el resultado de validación.\n\n\`\`\`\n${err.message}\n\`\`\``;
+            }
+
+            // Buscar comentario previo del bot y actualizarlo (en lugar de spam)
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('DLCO QA Agent - Reporte')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment,
+              });
+            }
+
+      # -----------------------------------------------------------------------
+      # 7. Determinar si el PR pasa o falla el check
+      # -----------------------------------------------------------------------
+      - name: 🚦 Evaluar veredicto del agente
+        if: steps.changed-files.outputs.skip_validation != 'true'
+        run: |
+          python -c "
+          import json, sys
+          with open('validation_result.json') as f:
+              result = json.load(f)
+          findings = result.get('findings', [])
+          critical = [f for f in findings if f.get('severity') == 'CRITICAL']
+          if critical:
+              print(f'❌ Se encontraron {len(critical)} findings CRITICAL. Bloqueando merge.')
+              for f in critical:
+                  print(f'   • [{f.get(\"rule\")}] {f.get(\"message\")}')
+              sys.exit(1)
+          print('✅ Sin findings CRITICAL. PR aprobado por el agente.')
+          "
+
+      # -----------------------------------------------------------------------
+      # 8. Mensaje cuando no hay archivos que validar
+      # -----------------------------------------------------------------------
+      - name: ℹ️ Skip validation message
+        if: steps.changed-files.outputs.skip_validation == 'true'
+        run: |
+          echo "## ℹ️ DLCO QA Agent" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No hay archivos \`.py\` modificados en este PR que requieran validación del agente." >> $GITHUB_STEP_SUMMARY

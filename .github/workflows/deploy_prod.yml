@@ -1,0 +1,140 @@
+# =============================================================================
+# WORKFLOW: Deploy a PRODUCTION
+# =============================================================================
+# Trigger: Botón "Run workflow" desde la UI o creación de tag v*.*.*
+# Acción:  Despliega el Asset Bundle al target "prod" del workspace.
+#          REQUIERE aprobación manual via GitHub Environment "production".
+# =============================================================================
+
+name: DLCO QA - Deploy PROD
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión a desplegar (ej: v1.0.0)'
+        required: true
+        type: string
+      reason:
+        description: 'Justificación del deploy a prod'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+  DATABRICKS_BUNDLE_ENV: prod
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1: Validación previa al deploy (sin requerir aprobación)
+  # ---------------------------------------------------------------------------
+  validate:
+    name: 🔍 Validar bundle pre-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v4
+
+      - name: 📦 Install Databricks CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          databricks --version
+
+      - name: ✅ Validar bundle
+        run: databricks bundle validate --target prod
+
+  # ---------------------------------------------------------------------------
+  # JOB 2: Deploy a producción (requiere aprobación manual)
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: 🚀 Deploy a PRODUCTION
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # ⚠️ Este environment está configurado con "Required reviewers" en GitHub
+    # GitHub esperará aprobación manual antes de ejecutar este job
+    environment:
+      name: production
+      url: ${{ env.DATABRICKS_HOST }}
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v4
+
+      - name: 📦 Install Databricks CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          databricks --version
+
+      - name: 🚀 Deploy bundle a prod
+        run: databricks bundle deploy --target prod
+
+      - name: 📋 Resumen del deploy
+        run: |
+          {
+            echo "## 🚀 Deploy a PRODUCTION exitoso"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|-------|-------|"
+            echo "| **Target** | prod |"
+            echo "| **Versión** | ${{ inputs.version || github.ref_name }} |"
+            echo "| **Trigger** | ${{ github.event_name }} |"
+            echo "| **Run by** | @${{ github.actor }} |"
+            echo "| **Approved** | ✅ (via environment protection) |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo "| **Razón** | ${{ inputs.reason || 'Tag release' }} |"
+            echo ""
+            echo "### 🔗 Recursos desplegados"
+            echo "- Notebooks en \`/Workspace/Shared/dlco_qa_agents/prod/\`"
+            echo "- Jobs de producción registrados"
+          } >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # JOB 3: Notificación post-deploy
+  # ---------------------------------------------------------------------------
+  notify:
+    name: 📣 Notificar resultado
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 📬 Crear issue de release notes (si éxito)
+        if: needs.deploy.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ inputs.version || github.ref_name }}';
+            const body = `## 🚀 Release ${version} desplegado a PROD
+
+            **Desplegado por:** @${{ github.actor }}
+            **Fecha:** ${new Date().toISOString()}
+            **Razón:** ${{ inputs.reason || 'Tag release' }}
+
+            ### ✅ Componentes desplegados
+            - DLCO QA Agent v1.0
+            - 6 UC Functions
+            - PR Validation Job
+            - Golden Dataset
+
+            ### 🔗 Workspace
+            ${process.env.DATABRICKS_HOST}
+            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚀 Release ${version} - Deployed to PROD`,
+              body: body,
+              labels: ['release', 'production'],
+            });
