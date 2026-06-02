@@ -29,9 +29,6 @@ variables:
 include:
   - resources/*.yml
 
-workspace:
-  host: ${DATABRICKS_HOST}
-
 targets:
   dev:
     mode: development
