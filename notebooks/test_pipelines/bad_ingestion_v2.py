@@ -32,6 +32,13 @@ def ingest_customer_pipeline_v2():
     Carga datos desde landing layer, los procesa y los persiste en bronze.
     Integra logging completo y manejo de errores.
     """
+    # ❌ Problema 1: print() en lugar de logging
+    print("Starting customer ingestion pipeline...")
+
+    # ❌ Problema 2: password hardcoded (CRITICAL - bloquea merge)
+    database_password = "MySuperSecretPassword2024"
+    api_token = "sk-abc123def456ghi789"
+
     try:
         logger.info("Starting customer ingestion pipeline v2")
 
