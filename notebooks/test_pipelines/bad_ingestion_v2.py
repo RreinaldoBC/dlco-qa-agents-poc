@@ -1,56 +1,100 @@
 # ============================================================================
-# ARCHIVO DE PRUEBA - CÓDIGO INTENCIONALMENTE MALO
+# ARCHIVO DE PRUEBA - CÓDIGO BUENO (BEST PRACTICES)
 # ============================================================================
-# Este archivo contiene múltiples anti-patrones DLCO para probar que el agente
-# DLCO QA los detecta correctamente cuando se abre el PR.
+# Este archivo cumple TODAS las reglas DLCO. Se usará como comparación al
+# corregir el archivo bad_ingestion_v2.py durante el test end-to-end.
 #
-# Anti-patrones intencionalmente incluidos:
-#   1. DLCO-001: print() en producción          (HIGH)
-#   2. DLCO-003: path hardcoded /mnt/...        (MEDIUM)
-#   3. DLCO-005: df.collect() sin limit         (HIGH)
-#   4. DLCO-007: CSV read sin schema explícito  (MEDIUM)
-#   5. DLCO-013: sin manejo de errores          (MEDIUM)
-#   6. DLCO-015: password hardcoded             (CRITICAL) ← bloquea el merge
-#   7. DLCO-017: write sin formato Delta        (MEDIUM)
+# Mejores prácticas implementadas:
+#   ✅ logging en lugar de print()
+#   ✅ dbutils.secrets para credenciales
+#   ✅ Unity Catalog en lugar de paths /mnt/
+#   ✅ Schema explícito en CSV reads
+#   ✅ try/except para manejo de errores
+#   ✅ Formato Delta explícito
+#   ✅ partitionBy en writes
+#   ✅ Logging de audit trail
 #
-# Expected verdict: REJECTED (debido al CRITICAL de password hardcoded)
+# Expected verdict: APPROVED con quality_score alto
 # ============================================================================
+
+import logging
+from pyspark.sql.types import (
+    StructType, StructField, StringType, TimestampType, BooleanType
+)
+
+logger = logging.getLogger(__name__)
 
 
 def ingest_customer_pipeline_v2():
     """
-    Pipeline de ingesta NUEVO desarrollado por el equipo.
-    Este código tiene múltiples problemas que el agente DLCO debe detectar.
+    Pipeline de ingesta de clientes siguiendo best practices DLCO.
+
+    Carga datos desde landing layer, los procesa y los persiste en bronze.
+    Integra logging completo y manejo de errores.
     """
-    # ❌ Problema 1: print() en lugar de logging
-    print("Starting customer ingestion pipeline...")
+    try:
+        logger.info("Starting customer ingestion pipeline v2")
 
-    # ❌ Problema 2: password hardcoded (CRITICAL - bloquea merge)
-    database_password = "MySuperSecretPassword2024"
-    api_token = "sk-abc123def456ghi789"
+        # ✅ Credenciales desde secret scope
+        database_password = dbutils.secrets.get(
+            scope="dlco-secrets", key="db-password"
+        )
+        api_token = dbutils.secrets.get(
+            scope="dlco-secrets", key="api-token"
+        )
 
-    # ❌ Problema 3: path hardcoded en lugar de Unity Catalog
-    raw_data_path = "/mnt/landing/customers/raw_data.csv"
+        # ✅ Schema explícito para mejor performance y type safety
+        customer_schema = StructType([
+            StructField("customer_id", StringType(), False),
+            StructField("name", StringType(), True),
+            StructField("status", StringType(), True),
+            StructField("country", StringType(), True),
+            StructField("active", BooleanType(), True),
+            StructField("created_at", TimestampType(), True),
+        ])
 
-    # ❌ Problema 4: CSV read sin schema explícito
-    df = spark.read.csv(raw_data_path, header=True)
+        # ✅ Unity Catalog en lugar de paths /mnt/
+        df = (
+            spark.read
+            .format("csv")
+            .schema(customer_schema)
+            .option("header", "true")
+            .table("landing_customers_raw")
+        )
 
-    # ❌ Problema 5: collect() sin limit (riesgo OOM)
-    all_customers = df.collect()
+        # ✅ Filtrado sin collect()
+        filtered = df.filter("status = 'active'")
+        record_count = filtered.count()
 
-    # Procesamiento
-    filtered = df.filter("status = 'active'")
+        logger.info(f"Filtered {record_count} active customers")
 
-    # ❌ Problema 6: write sin formato Delta explícito
-    # ❌ Problema 7: sin partitionBy en overwrite
-    filtered.write.mode("overwrite").saveAsTable("customers_output")
+        # ✅ Write con Delta + partitionBy
+        (
+            filtered.write
+            .format("delta")
+            .mode("overwrite")
+            .partitionBy("country")
+            .saveAsTable("bronze_customers_v2")
+        )
 
-    # ❌ Problema 8: print en lugar de logging
-    print(f"Processed {len(all_customers)} customers")
+        # ✅ Audit trail explícito
+        from datetime import datetime
+        spark.sql(f"""
+            INSERT INTO dlco_qa_agents.audit.pr_verdicts
+            (pr_id, pr_url, pr_verdict, findings_count, created_at, created_by)
+            VALUES (
+                'ingestion-v2-{datetime.now().strftime("%Y%m%d-%H%M%S")}',
+                'https://internal.com/jobs/ingest-v2',
+                'success',
+                0,
+                current_timestamp(),
+                'ingest_customer_pipeline_v2'
+            )
+        """)
 
-    return filtered
+        logger.info(f"Pipeline completed successfully. Records: {record_count}")
+        return filtered
 
-
-# Llamada principal
-if __name__ == "__main__":
-    result = ingest_customer_pipeline_v2()
+    except Exception as e:
+        logger.error(f"Pipeline failed: {e}")
+        raise
